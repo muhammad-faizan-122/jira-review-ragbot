@@ -6,7 +6,21 @@ The goal is to build a chatbot that answers user questions in the context of a J
 ## Block Diagram
 ![alt text](images/block_diagram.png)
 ## usage
-run ingestion script
+1. Clone repo
 ```
-python3 src/ingest/main.py
+git clone https://github.com/muhammad-faizan-122/jira-review-ragbot.git
+```
+2. Create virtual env
+
+3. Install requirements using 
+```
+pip install -r requirements.txt
+```
+4. Run ingestion script
+```
+python3 ingest.py
+```
+5. Run the app
+```
+gradio app.py
 ```
