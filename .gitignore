@@ -1,0 +1,18 @@
+
+# Environment variables
+.env
+
+# Python cache
+*__pycache__/
+*.pyc
+
+
+experiments/
+# Vector Store - DO NOT COMMIT
+
+chroma_db/
+# Log files
+*log
+
+# Gradio local runtime files - DO NOT COMMIT
+.gradio/
