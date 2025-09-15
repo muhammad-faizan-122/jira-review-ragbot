@@ -1,7 +1,7 @@
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from src.common import config
-from src.rag.utils import load_reviews_documents
+from src.common.utils import load_reviews_documents
 from src.common.logger import setup_logger
 from src.common.utils import measure_time
 

@@ -1,41 +1,54 @@
-from src.common.logger import log
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, START, END
 from src.bot.states import State
-from dotenv import load_dotenv
-from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from langgraph.checkpoint.memory import MemorySaver
 from src.rag.rag_executor import jira_rag_agent
 from langchain_core.messages import AIMessage
 from langchain_core.messages.utils import get_buffer_string
-from src.common.config import ROUTER_PROMPT
+from src.common import config
 from src.common.utils import measure_time
+from src.common.logger import log
+from dotenv import load_dotenv
 
 
 load_dotenv(override=True)
 
 
-class RouterQuery(BaseModel):
+class QueryRouter(BaseModel):
     """Router for selecting the next node."""
 
     route: str = Field(
-        description=ROUTER_PROMPT,
-        enum=["rag", "chatbot"],
+        description=config.ROUTER_PROMPT,
+        enum=["rag", "chat"],
     )
 
 
-def use_jira_knowledge_base(state: State) -> dict:
-    """
-    Executes the RAG logic.
-    """
-    log.debug(f"Executing ChatbotNode with state: {state}")
-    messages = state["messages"]
-    with measure_time("RAG answer generation", log):
-        rag_response = jira_rag_agent.get_rag_response(query=messages[-1].content)
+class RAGNode:
+    def __init__(self):
+        pass
 
-    log.debug("rag_response langGraph bot: ", rag_response)
-    return {"messages": [AIMessage(content=rag_response)]}
+    def execute(self, state: State) -> dict:
+        """
+        Executes the RAG logic.
+        """
+        log.debug(f"Executing ChatbotNode with state: {state}")
+        try:
+            query = state["messages"][-1].content
+            if not query:
+                return {
+                    "messages": [AIMessage(content="Please provide a valid question.")]
+                }
+
+            with measure_time("RAG answer generation", log):
+                rag_response = jira_rag_agent.get_response(query=query)
+            log.debug("rag_response langGraph bot: ", rag_response)
+            return {"messages": [AIMessage(content=rag_response)]}
+        except Exception as e:
+            log.error(f"Error in RAGNode execution: {e}")
+            return {
+                "messages": [AIMessage(content="Failed to generate desired results")]
+            }
 
 
 class ChatbotNode:
@@ -45,16 +58,17 @@ class ChatbotNode:
 
     def __init__(self, chat_model):
         self.chat_model = chat_model
-        self.history_turns = 5
-        self.max_turns = 10
+        self.history_turns = config.CONVERSATION_HISTORY_TURNS
+        self.max_turns = config.CONVERSATION_MAX_TURNS
 
-    def crop_history(self, messages):
+    def trim_messages(self, messages):
+        """trim the old messages to avoid context window issue due to LLM limitation"""
         total_messages = len(messages)
-        start_conversation = total_messages - self.history_turns - 1
-        return (
+        start_conversation = max(0, total_messages - self.history_turns - 1)
+        return get_buffer_string(
             messages[start_conversation:-1]
             if total_messages > self.max_turns
-            else messages
+            else messages[:-1]
         )
 
     def execute(self, state: State) -> dict:
@@ -63,28 +77,8 @@ class ChatbotNode:
         """
         log.debug(f"Executing ChatbotNode with state: {state}")
         messages = state["messages"]
-
-        total_messages = len(messages)
-
-        # crop the old messages to avoid context window issue due to LLM limitation
-        start_conversation = total_messages - self.history_turns - 1
-        conversation_history = get_buffer_string(
-            messages[start_conversation:-1]
-            if total_messages > self.max_turns
-            else messages[:-1]
-        )
-        log.debug(f"conversation history pass to LLM: {conversation_history}")
-
-        prompt_template = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "You are a helpful assistant. Answer the user's query very concisely.\nConversation history:\n{conversation_history}",
-                ),
-                ("user", "{user_query}"),
-            ]
-        )
-        prompt = prompt_template.invoke(
+        conversation_history = self.trim_messages(messages)
+        prompt = config.CHATBOT_TEMPLATE.invoke(
             {
                 "conversation_history": conversation_history,
                 "user_query": messages[-1].content,
@@ -99,7 +93,9 @@ class ChatbotNode:
 
         except Exception as e:
             log.error(f"Error in ChatbotNode execution: {e}")
-            raise
+            return {
+                "messages": [AIMessage(content="Failed to generate desired results")]
+            }
 
 
 class GraphBuilder:
@@ -121,7 +117,7 @@ class GraphBuilder:
         except Exception as e:
             log.error(f"Error in router execution: {e}")
             # Default to chatbot on error
-            return "chatbot"
+            return "chat"
 
     @staticmethod
     def build_graph(model_name: str = "google_genai:gemini-1.5-flash"):
@@ -131,17 +127,17 @@ class GraphBuilder:
         chat_model = init_chat_model(model_name)
 
         # LLM with function calling for the router
-        structured_llm = chat_model.with_structured_output(RouterQuery)
+        structured_llm = chat_model.with_structured_output(QueryRouter)
 
         # Initialize nodes
         chatbot_node = ChatbotNode(chat_model=chat_model)
-        log.info("Chat model and all nodes created.")
+        rag_node = RAGNode()
 
         bot_graph = StateGraph(State)
 
         # Add nodes to the graph
         bot_graph.add_node("chatbot", chatbot_node.execute)
-        bot_graph.add_node("rag_search", use_jira_knowledge_base)
+        bot_graph.add_node("rag_search", rag_node.execute)
 
         # The entry point is now a conditional router
         bot_graph.add_conditional_edges(
@@ -149,7 +145,7 @@ class GraphBuilder:
             lambda state: GraphBuilder.router_function(state, structured_llm),
             {
                 "rag": "rag_search",
-                "chatbot": "chatbot",
+                "chat": "chatbot",
             },
         )
 

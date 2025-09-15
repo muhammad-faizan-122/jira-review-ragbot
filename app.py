@@ -2,7 +2,7 @@ import gradio as gr
 from langchain_core.messages import HumanMessage, AIMessage
 from typing import List, Tuple
 from src.common.logger import log
-from src.bot.search_graph import GraphBuilder
+from src.bot.graph import GraphBuilder
 from dotenv import load_dotenv
 import os
 import uuid
@@ -24,12 +24,8 @@ except Exception as e:
     raise
 
 
-# --- Gradio UI and Logic ---
 with gr.Blocks(theme="soft", title="Jira Reviews ChatBot") as demo:
 
-    # --- State Management ---
-    # Create a state variable to hold a unique thread_id for each user session.
-    # This is the key component for multi-user support.
     thread_id_state = gr.State()
 
     # --- UI Components ---

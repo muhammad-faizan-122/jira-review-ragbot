@@ -17,13 +17,13 @@ SPARSE_RETRIEVED_DOCUMENTS = 3
 # --- LLM and Prompt Configuration ---
 LLM_MODEL_NAME = "gemini-1.5-flash"
 
-ROUTER_PROMPT = """You are router who is responsible to select either 'rag' or 'chatbot'. \
+ROUTER_PROMPT = """You are router who is responsible to select either 'rag' or 'chat'. \
 If user ask query specifically related to Jira (a project managment tool) or ask related project management related things \
 without specifically mentioning name of 'Jira' name, select 'rag' for answering from Jira knowledge base, \
-otherwise select 'chatbot'.
+otherwise select 'chat'.
 """
 
-SYSTEM_PROMPT = (
+RAG_SYSTEM_PROMPT = (
     "You are a helpful assistant. Given Jira reviews, your task is to answer the user's query "
     "based *only* on the provided review context.\n"
     "Do NOT make up any answers. If the answer is not found in the reviews, respond with: "
@@ -41,9 +41,24 @@ SYSTEM_PROMPT = (
     "{context}"
 )
 
-PROMPT_TEMPLATE = ChatPromptTemplate.from_messages(
+RAG_GENERATION_PROMPT = ChatPromptTemplate.from_messages(
     [
-        ("system", SYSTEM_PROMPT),
+        ("system", RAG_SYSTEM_PROMPT),
         ("human", "{input}"),
     ]
 )
+
+
+CHATBOT_TEMPLATE = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are a helpful assistant. Answer the user's query very concisely.\nConversation history:\n{conversation_history}",
+        ),
+        ("user", "{user_query}"),
+    ]
+)
+
+# TRIM MESSAGE CONFIGS
+CONVERSATION_HISTORY_TURNS = 5
+CONVERSATION_MAX_TURNS = 10
